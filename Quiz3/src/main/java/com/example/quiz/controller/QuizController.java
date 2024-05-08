@@ -2,7 +2,6 @@ package com.example.quiz.controller;
 
 import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -11,22 +10,25 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.quiz.component.UtilComponent;
 import com.example.quiz.entity.Quiz;
 import com.example.quiz.form.QuizForm;
 import com.example.quiz.service.QuizService;
 
+import lombok.RequiredArgsConstructor;
+
 /** Quizコントローラー */
 @Controller
-@RequestMapping("/quiz")
+@RequiredArgsConstructor
+// @RequestMapping("/quiz")
 public class QuizController {
 
 	/** DI対象 */
-	@Autowired
-	QuizService service;
+	private final QuizService service;
+	private final UtilComponent utilComponent;
 
 	/** 「form-backing bean」の初期化 */
 	/*
@@ -54,9 +56,9 @@ public class QuizController {
 	}
 
 	/** Quizの一覧を表示します */
-	@GetMapping
 	// 次のURLで、リクエストハンドラメソッドである showList が呼び出される。
 	// http://localhost:8080/quiz
+	@GetMapping("/quiz")
 	public String showList(QuizForm quizForm, Model model) {
 
 		//新規登録設定
@@ -71,7 +73,7 @@ public class QuizController {
 	}
 
 	/** Quizデータを1件挿入 */
-	@PostMapping("/insert")
+	@PostMapping("/quiz/insert")
 	public String insert(
 		@Validated QuizForm quizForm,
 		BindingResult bindingResult,
@@ -80,72 +82,79 @@ public class QuizController {
 	) {
 
 		// 入力チェック
-		if (!bindingResult.hasErrors()) {
+		if (bindingResult.hasErrors()) {
 
-			// FormからEntityへの詰め替え
-			Quiz quiz = new Quiz();
-			quiz.setQuestion(quizForm.getQuestion());
-			quiz.setAnswer(quizForm.getAnswer());
-			quiz.setAuthor(quizForm.getAuthor());
+			// エラーがある場合は、一覧表示処理を呼びます
+			return showList(quizForm, model);
+
+		} else {
+
+			Quiz quiz = utilComponent.formToEntity(quizForm);
 
 			service.insertQuiz(quiz);
 
 			/*
 			 * RedirectAttributes を、本メソッドの引数に設定し、
-			 * redirectAttributes.addFlashAttribute("complete","登録が完了しました");
+			 * redirectAttributes.addFlashAttribute("complete", "登録が完了しました。");
 			 * と記述することで、リダイレクト先に渡したい値を設定している。
 			 * これは「FlashScope」という「スコープ」になり、1回のリダイレクトでのみ有効な「スコープ」となる。
 			 */
-			redirectAttributes.addFlashAttribute("complete", "登録が完了しました");
+			redirectAttributes.addFlashAttribute("complete", "登録が完了しました。");
 			return "redirect:/quiz";
-
-		} else {
-
-			// エラーがある場合は、一覧表示処理を呼びます
-			return showList(quizForm, model);
 
 		}
 
 	}
 
 	/** Quizデータを１件取得し、フォーム内に表示する */
-	@GetMapping("/{id}")
+	@GetMapping("/quiz/{id}")
 	public String showUpdate(
-		QuizForm quizForm,
 		@PathVariable Integer id,
-		Model model
+		Model model,
+		RedirectAttributes redirectAttributes
 	) {
 
-		//Quizを取得(Optionalでラップ)
+		// Quizを取得(Optionalでラップ)
 		Optional<Quiz> quizOpt = service.selectOneById(id);
-		//QuizFormへの詰め直し
-		Optional<QuizForm> quizFormOpt = quizOpt.map(t -> makeQuizForm(t));
+		// QuizFormへの詰め直し
+		Optional<QuizForm> quizFormOpt = quizOpt.map(t -> utilComponent.entityToForm(t));
 
-		//QuizFormがnullでなければ中身を取り出す
+		// QuizFormがnullでなければ中身を取り出す
 		if (quizFormOpt.isPresent()) {
 
-			quizForm = quizFormOpt.get();
+			QuizForm quizForm = quizFormOpt.get();
+
+			// 更新用のModelを作成する
+			makeUpdateModel(quizForm, model);
+			return "crud";
+
+		} else {
+
+			/*
+			 * RedirectAttributes を、本メソッドの引数に設定し、
+			 * redirectAttributes.addFlashAttribute("...","...");
+			 * と記述することで、リダイレクト先に渡したい値を設定している。
+			 * これは「FlashScope」という「スコープ」になり、1回のリダイレクトでのみ有効な「スコープ」となる。
+			 */
+			redirectAttributes.addFlashAttribute("complete", "更新対象のデータが無くなった！");
+			return "redirect:/quiz";
 
 		}
-
-		// 更新用のModelを作成する
-		makeUpdateModel(quizForm, model);
-		return "crud";
 
 	}
 
 	/** 更新用のModelを作成する */
 	private void makeUpdateModel(QuizForm quizForm, Model model) {
 
-		model.addAttribute("id", quizForm.getId());
 		quizForm.setNewQuiz(false);
 		model.addAttribute("quizForm", quizForm);
+		model.addAttribute("id", quizForm.getId());
 		model.addAttribute("title", "更新用フォーム");
 
 	}
 
 	/** idをKeyにしてデータを更新する */
-	@PostMapping("/update")
+	@PostMapping("/quiz/update")
 	public String update(
 		@Validated QuizForm quizForm,
 		BindingResult result,
@@ -154,13 +163,20 @@ public class QuizController {
 	) {
 
 		// 入力チェック
-		if (!result.hasErrors()) {
+		if (result.hasErrors()) {
+
+			// 更新用のModelを作成する
+			makeUpdateModel(quizForm, model);
+			return "crud";
+
+		} else {
 
 			//QuizFormからQuizに詰め直す
-			Quiz quiz = makeQuiz(quizForm);
+			Quiz quiz = utilComponent.formToEntity(quizForm);
+
+			service.updateQuiz(quiz);
 
 			//更新処理、フラッシュスコープの使用、リダイレクト（個々の編集ページ）
-			service.updateQuiz(quiz);
 
 			/*
 			 * RedirectAttributes を、本メソッドの引数に設定し、
@@ -168,48 +184,16 @@ public class QuizController {
 			 * と記述することで、リダイレクト先に渡したい値を設定している。
 			 * これは「FlashScope」という「スコープ」になり、1回のリダイレクトでのみ有効な「スコープ」となる。
 			 */
-			redirectAttributes.addFlashAttribute("complete", "更新が完了しました");
+			redirectAttributes.addFlashAttribute("complete", "更新が完了しました。");
 			// 更新画面を表示する
 			return "redirect:/quiz/" + quiz.getId();
-
-		} else {
-
-			// 更新用のModelを作成する
-			makeUpdateModel(quizForm, model);
-			return "crud";
 
 		}
 
 	}
 
-	// ---------- 【以下はFormとDomainObjectの詰めなおし】 ----------
-	/** QuizFormからQuizに詰め直して戻り値とし返します */
-	private Quiz makeQuiz(QuizForm quizForm) {
-
-		Quiz quiz = new Quiz();
-		quiz.setId(quizForm.getId());
-		quiz.setQuestion(quizForm.getQuestion());
-		quiz.setAnswer(quizForm.getAnswer());
-		quiz.setAuthor(quizForm.getAuthor());
-		return quiz;
-
-	}
-
-	/** QuizからQuizFormに詰め直して戻り値とし返します */
-	private QuizForm makeQuizForm(Quiz quiz) {
-
-		QuizForm form = new QuizForm();
-		form.setId(quiz.getId());
-		form.setQuestion(quiz.getQuestion());
-		form.setAnswer(quiz.getAnswer());
-		form.setAuthor(quiz.getAuthor());
-		form.setNewQuiz(false);
-		return form;
-
-	}
-
 	/** idをKeyにしてデータを削除する */
-	@PostMapping("/delete")
+	@PostMapping("/quiz/delete")
 	public String delete(
 		@RequestParam("id") String id,
 		Model model,
@@ -225,25 +209,28 @@ public class QuizController {
 		 * と記述することで、リダイレクト先に渡したい値を設定している。
 		 * これは「FlashScope」という「スコープ」になり、1回のリダイレクトでのみ有効な「スコープ」となる。
 		 */
-		redirectAttributes.addFlashAttribute("delcomplete", "削除が完了しました");
+		redirectAttributes.addFlashAttribute("delcomplete", "削除が完了しました。");
 		return "redirect:/quiz";
 
 	}
 
 	// ---------- 【以下はクイズで遊ぶ機能】 ----------
 	/** Quizデータをランダムで１件取得し、画面に表示する */
-	@GetMapping("/play")
-	public String showQuiz(QuizForm quizForm, Model model) {
+	@GetMapping("/quiz/play")
+	public String showQuiz(
+		Model model
+	) {
 
-		//Quizを取得(Optionalでラップ)
+		// Quiz を取得( Optional でラップ)
 		Optional<Quiz> quizOpt = service.selectOneRandomQuiz();
 
 		// 値が入っているか判定する
 		if (quizOpt.isPresent()) {
 
 			// QuizFormへの詰め直し
-			Optional<QuizForm> quizFormOpt = quizOpt.map(t -> makeQuizForm(t));
-			quizForm = quizFormOpt.get();
+			Optional<QuizForm> quizFormOpt = quizOpt.map(t -> utilComponent.entityToForm(t));
+
+			QuizForm quizForm = quizFormOpt.get();
 
 			// 表示用「Model」への格納
 			model.addAttribute("quizForm", quizForm);
@@ -258,8 +245,8 @@ public class QuizController {
 
 	}
 
-	/** クイズの正解/不正解を判定する */
-	@PostMapping("/check")
+	/** クイズの正解 不正解を判定する */
+	@PostMapping("/quiz/check")
 	public String checkQuiz(
 		QuizForm quizForm,
 		@RequestParam Boolean answer,
