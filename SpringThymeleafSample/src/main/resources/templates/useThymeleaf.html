@@ -208,6 +208,16 @@ th {
 
 	<!-- 16：繰り返しのステータス -->
 	<h1>16：繰り返しのステータス</h1>
+	<!--
+	【補足説明】
+		members の要素型を member として扱いつつ、* による参照を
+		使用するために、th:object="${member}" と記述している。
+		th:each="member の member と
+		th:object="${member}" の member は、
+		同じ綴りであれば、例えば 両方を hoge としても、正常に動作する。
+		次行が、その実装例である。
+		<div th:each="hoge, s:${members}" th:object="${hoge}">
+	-->
 	<div th:each="member, s:${members}" th:object="${member}">
 		<p>
 			index->[[${s.index}]],
