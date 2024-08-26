@@ -19,7 +19,12 @@ public class QuizForm {
 	@NotBlank
 	private String author;
 
-	/** 「登録」or「変更」判定用 */
+	/**
+	 *  「登録」or「変更」判定用
+	 *  
+	 *   登録用のデータと見なす場合は、true を
+	 *   変更（更新）用のデータと見なす場合は、false を保持する。
+	 */
 	private Boolean newQuiz;
 
 }
